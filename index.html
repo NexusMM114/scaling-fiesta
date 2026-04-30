@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Lobby</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { theme: { extend: { colors: { black: "#000", white: "#fff" } } } }
+    </script>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { background-color: #000; color: #fff; font-family: sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        input { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 10px; border-radius: 8px; width: 100%; outline: none; }
+        input:focus { border-color: white; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [lobbies, setLobbies] = useState([]);
+            const [token, setToken] = useState(localStorage.getItem('nexus_admin_token') || null);
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            
+            // Upload Form State
+            const [formData, setFormData] = useState({ title: '', version: '', tags: '', imageUrl: '' });
+
+            const isAdminRoute = window.location.pathname === '/admin';
+
+            // Fetch lobbies on load
+            useEffect(() => {
+                fetch('/api/lobbies')
+                    .then(res => res.json())
+                    .then(data => setLobbies(data));
+            }, []);
+
+            // --- LOGIN HANDLER ---
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setError('');
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                
+                const data = await res.json();
+                if (res.ok) {
+                    setToken(data.token);
+                    localStorage.setItem('nexus_admin_token', data.token);
+                } else {
+                    setError(data.error);
+                }
+            };
+
+            // --- UPLOAD HANDLER ---
+            const handleUpload = async (e) => {
+                e.preventDefault();
+                const tagsArray = formData.tags.split(',').map(tag => tag.trim());
+                
+                const res = await fetch('/api/lobbies', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` 
+                    },
+                    body: JSON.stringify({ ...formData, tags: tagsArray })
+                });
+
+                if (res.ok) {
+                    const newLobby = await res.json();
+                    setLobbies([newLobby, ...lobbies]); // Update UI instantly
+                    setFormData({ title: '', version: '', tags: '', imageUrl: '' }); // Clear form
+                    alert('Lobby Uploaded Successfully!');
+                } else {
+                    alert('Upload failed. Your token might be expired.');
+                    handleLogout();
+                }
+            };
+
+            const handleLogout = () => {
+                setToken(null);
+                localStorage.removeItem('nexus_admin_token');
+            };
+
+            return (
+                <div className="min-h-screen p-6 relative overflow-hidden">
+                    <header className="flex justify-between items-center mb-10">
+                        <h1 className="text-3xl font-bold">NEXUS LOBBY</h1>
+                        {isAdminRoute && token && (
+                            <button onClick={handleLogout} className="border border-white/20 bg-white/10 px-4 py-2 rounded-full text-sm hover:bg-white/20 transition">
+                                Logout
+                            </button>
+                        )}
+                    </header>
+
+                    {!isAdminRoute ? (
+                        // 🌍 PUBLIC PAGE
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {lobbies.length === 0 ? <p className="text-white/50">No lobbies uploaded yet.</p> : null}
+                            {lobbies.map(lobby => (
+                                <div key={lobby._id} className="glass-panel p-6 rounded-2xl">
+                                    <h2 className="text-2xl font-semibold">{lobby.title}</h2>
+                                    <div className="flex gap-2 my-2">
+                                        <span className="text-xs border border-white/20 px-2 py-1 rounded-md">{lobby.version}</span>
+                                        {lobby.tags.map(tag => <span key={tag} className="text-xs bg-white/10 px-2 py-1 rounded-md">{tag}</span>)}
+                                    </div>
+                                    <button className="w-full mt-4 bg-white text-black font-bold py-2 rounded-lg hover:bg-gray-200 transition">Download</button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : !token ? (
+                        // 🔐 ADMIN LOGIN PAGE
+                        <div className="glass-panel p-8 rounded-2xl max-w-sm mx-auto mt-20 text-center">
+                            <h2 className="text-2xl font-bold mb-6">Admin Login</h2>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input 
+                                    type="password" 
+                                    placeholder="Enter Admin Password" 
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required 
+                                />
+                                {error && <p className="text-red-400 text-sm">{error}</p>}
+                                <button type="submit" className="w-full bg-white text-black font-bold py-3 rounded-lg hover:bg-gray-200 transition">
+                                    Access Terminal
+                                </button>
+                            </form>
+                        </div>
+                    ) : (
+                        // 🛠️ ADMIN DASHBOARD (Logged In)
+                        <div className="glass-panel p-8 rounded-2xl max-w-lg mx-auto">
+                            <h2 className="text-2xl font-bold mb-6 text-green-400">Upload New Lobby</h2>
+                            <form onSubmit={handleUpload} className="space-y-4">
+                                <div>
+                                    <label className="text-sm text-white/50 mb-1 block">Lobby Title</label>
+                                    <input type="text" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-sm text-white/50 mb-1 block">Minecraft Version</label>
+                                    <input type="text" placeholder="e.g. 1.20.4" required value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-sm text-white/50 mb-1 block">Tags (comma separated)</label>
+                                    <input type="text" placeholder="Hub, Survival, Clean" required value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} />
+                                </div>
+                                <button type="submit" className="w-full mt-4 bg-white text-black font-bold py-3 rounded-lg hover:bg-gray-200 transition">
+                                    Publish to Nexus
+                                </button>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
